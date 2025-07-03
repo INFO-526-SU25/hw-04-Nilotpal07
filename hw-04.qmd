@@ -17,7 +17,9 @@ if (!require("pacman"))
 pacman::p_load(tidyverse,
                tigris,
                sf,
-               ggrepel)
+               ggrepel,
+               readxl,
+               scales)
 
 options(tigris_use_cache = TRUE)
 
@@ -87,7 +89,57 @@ ggplot(data = az_counties) +
 ## 3.  Arizona state of population change
 
 ```{r}
-#| label: label-me-3
+#| label: read-pop-data
+# Suppress warnings and messages when reading Excel file
+pop_raw <- suppressMessages(suppressWarnings(
+  read_excel(
+    "data/co-est2023-pop-04.xlsx",
+    skip = 4,
+    n_max = 16,
+    col_names = FALSE
+  )
+))
+# Clean and rename columns, remove unwanted text from County names
+pop_data <- pop_raw %>%
+  select(County = ...1,
+         `2020` = ...3,
+         `2023` = ...6) %>%
+  mutate(
+    County = str_remove(County, " County"),
+    County = str_remove(County, "^\\."),
+    County = str_remove(County, ", Arizona"),
+    County = str_trim(County),
+    total_pop_change_20_23 = `2023` - `2020`
+  )
+# Merge population data with county shapefile using County name as the key
+az_merged <- az_counties %>%
+  mutate(County = str_remove(NAME, " County")) %>%
+  left_join(pop_data, by = "County")
+
+# Plot the population change map
+ggplot() +
+  geom_sf(data = az_merged,
+          aes(fill = total_pop_change_20_23),
+          color = "white") +
+  scale_fill_distiller(
+    palette = "RdBu",
+    direction = -1,
+    name = "Population change",
+    labels = comma
+  ) +
+  labs(
+    title = "Resident Population Change for Counties in AZ",
+    subtitle = "July 01, 2020 to July 01, 2023",
+    x = "Longitude",
+    y = "Latitude",
+    caption = "Source: Shapefile obtained using {tigris} R package, v2.0.1\npopulation change data from the US Census Bureau"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(color = "black", size = 12),
+    axis.text = element_text(color = "black", size = 10),
+    axis.caption = element_text(color = "black", size = 10)
+  )
 
 ```
 
