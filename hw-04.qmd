@@ -19,7 +19,9 @@ pacman::p_load(tidyverse,
                sf,
                ggrepel,
                readxl,
-               scales)
+               scales,
+               patchwork,
+               ggforce)
 
 options(tigris_use_cache = TRUE)
 
@@ -34,8 +36,40 @@ az_counties <- counties(state = "AZ", year = 2021, progress_bar = FALSE)
 
 
 ## 1 - A second chance
+Although I got the homework 2, question 4 correct, I wanted to see the visualization different colors and different unicode.
 
 ```{r}
+# Target's signature red color
+target_red <- "#FF9933"
+
+# Create a dataset with circle parameters using tibble()
+circles <- tibble::tibble(
+  x0 = 0,
+  y0 = 0,
+  r = c(10, 6, 3),
+  fill = c(target_red, "white", target_red)
+)
+
+# Generate the plot using ggplot2 and ggforce::geom_circle to draw circles in layers
+ggplot() +
+  # Outer red circle drawn
+  geom_circle(data = circles[1, ], aes(x0 = x0, y0 = y0, r = r),
+              fill = target_red, color = NA) +
+  # White circle drawn
+  geom_circle(data = circles[2, ], aes(x0 = x0, y0 = y0, r = r),
+              fill = "White", color = NA) +
+  # Inner red circle drawn
+  geom_circle(data = circles[3, ], aes(x0 = x0, y0 = y0, r = r),
+              fill = "dark green", color = NA) +
+  # Fix the coordinate ratio to ensure circles remain circular and not distorted
+  coord_fixed() +
+  #Add the "TARGET®" text below the circles
+  annotate("text", x = 0, y = -12,
+         label = "bold(INDIA)",
+         parse = TRUE,
+         color = target_red, size = 8) +
+  # Use a minimal theme to remove axes, gridlines, and background
+  theme_void()
 ```
 
 
