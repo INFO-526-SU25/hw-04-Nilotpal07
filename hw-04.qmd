@@ -233,5 +233,193 @@ ggplot() +
 
 ## 5. Arizona state of patchwork
 ```{r}
+# Read and clean population data
+pop_raw <- suppressMessages(suppressWarnings(
+  read_excel(
+    "data/co-est2023-pop-04.xlsx",
+    skip = 4,
+    n_max = 16,
+    col_names = FALSE
+  )
+))
+
+pop_data <- pop_raw %>%
+  select(County = ...1,
+         `2020` = ...3,
+         `2023` = ...6) %>%
+  mutate(
+    County = str_remove(County, " County"),
+    County = str_remove(County, "^\\."),
+    County = str_remove(County, ", Arizona"),
+    County = str_trim(County),
+    total_pop_change_20_23 = `2023` - `2020`
+  )
+
+# Read AZ counties and join population data
+az_counties <- az_counties %>%
+  mutate(NAME = str_remove(NAME, " County"))
+
+az_merged <- az_counties %>%
+  mutate(County = NAME) %>%
+  left_join(pop_data, by = "County")
+
+# Read tribal boundaries shapefile and transform CRS
+tribes <- st_read("data/American_Indian_Reservations_in_Arizona.shp", quiet = TRUE) %>%
+  st_transform(crs = st_crs(az_merged))
+
+# Prepare tribal labels
+tribes_labels <- tribes %>%
+  filter(
+    NAME %in% c(
+      "White Mountain Apache Tribe",
+      "San Carlos Apache Tribe",
+      "Tohono O’odham Nation"
+    )
+  ) %>%
+  st_point_on_surface() %>%
+  mutate(lon = st_coordinates(st_centroid(geometry))[, 1],
+         lat = st_coordinates(st_centroid(geometry))[, 2])
+
+# Prepare tribal labels
+tribes_labels <- suppressWarnings(
+  tribes %>%
+    filter(
+      NAME %in% c(
+        "White Mountain Apache Tribe",
+        "San Carlos Apache Tribe",
+        "Tohono O’odham Nation"
+      )
+    ) %>%
+    st_transform(2223) %>%  # Reproject to a planar CRS
+    st_point_on_surface() %>%
+    st_transform(st_crs(az_merged)) %>%  # Transform back to original CRS
+    mutate(lon = st_coordinates(.)[, 1], lat = st_coordinates(.)[, 2])
+)
+
+# Prepare county labels for main plot
+county_labels <- suppressWarnings(
+  az_merged %>%
+    filter(County %in% c("Maricopa", "Pinal", "Pima")) %>%
+    st_transform(2223) %>%
+    st_point_on_surface() %>%
+    st_transform(st_crs(az_merged)) %>%
+    mutate(lon = st_coordinates(.)[, 1], lat = st_coordinates(.)[, 2])
+)
+
+# --- Main Plot ---
+main_plot <- ggplot() +
+  geom_sf(data = az_merged,
+          aes(fill = total_pop_change_20_23),
+          color = "white") +
+  scale_fill_distiller(
+    palette = "RdBu",
+    direction = -1,
+    name = "Population change",
+    labels = comma
+  ) +
+  scale_x_continuous(
+    limits = c(-122, -109),
+    breaks = seq(-122, -109, by = 2),
+    labels = function(x)
+      paste0(abs(x), "°W")
+  ) +
+  scale_y_continuous(
+    limits = c(28, 37),
+    breaks = seq(30, 37, by = 2),
+    labels = function(x)
+      paste0(x, "°N")
+  ) +
+  coord_sf(expand = FALSE) +
+  geom_label_repel(
+    data = county_labels,
+    aes(x = lon, y = lat, label = County),
+    fill = "white",
+    color = "black",
+    label.size = 0.5,
+    size = 3,
+    segment.color = "black",
+    segment.size = 0.5,
+    min.segment.length = 0
+  ) +
+  annotate(
+    "segment",
+    x = -114,
+    y = 32,
+    xend = -116,
+    yend = 32,
+    linetype = "dotted",
+    color = "black",
+    size = 0.5
+  ) +
+  annotate(
+    "segment",
+    x = -113,
+    y = 31.7,
+    xend = -116,
+    yend = 30,
+    linetype = "dotted",
+    color = "black",
+    size = 0.5
+  ) +
+  labs(
+    title = "Resident Population Change for Counties in Arizona",
+    subtitle = "July 01, 2020 to July 01, 2023",
+    x = "Longitude",
+    y = "Latitude",
+    caption = "Source: Shapefile obtained using {tigris} R package, v2.0.1\npopulation change data from the US Census Bureau\nIndigenous Tribe Shapefile obtained from AZGeo Data"
+  ) +
+  theme_minimal() +
+  guides(fill = guide_colourbar(
+    direction = "horizontal",
+    title.position = "top",
+    label.position = "bottom"
+  )) +
+  theme(
+    legend.position = c(0.4, 0.9),
+    legend.direction = "horizontal",
+    legend.justification = "right",
+    legend.title.align = 0.5,
+    plot.margin = margin(10, 10, 10, 10),
+    axis.title = element_text(color = "black", size = 12),
+    axis.text = element_text(color = "black", size = 10),
+    plot.caption = element_text(color = "black", size = 9)
+  )
+
+# --- Corrected Inset Plot ---
+inset_plot <- ggplot() +
+  geom_sf(data = az_merged,
+          aes(fill = total_pop_change_20_23),
+          color = "white") +
+  geom_sf(
+    data = tribes,
+    fill = NA,
+    color = "black",
+    linewidth = 1
+  ) +
+  geom_label_repel(
+    data = tribes_labels,
+    aes(x = lon, y = lat, label = NAME),
+    fill = "white",
+    color = "black",
+    label.size = 0.3,
+    size = 2,
+    segment.color = "black",
+    segment.size = 0.3
+  ) +
+  scale_fill_distiller(palette = "RdBu", direction = -1) +
+  coord_sf(xlim = c(-115, -110), ylim = c(31, 35)) +
+  guides(fill = "none") +
+  theme_void() +
+  theme(panel.background = element_rect(fill = "gray60", color = NA))
+# --- Combine Plots with Inset ---
+final_plot <- main_plot +
+  inset_element(
+    inset_plot,
+    left = 0.02,
+    bottom = 0.05,
+    right = 0.5,
+    top = 0.5
+  )
+final_plot
 
 ```
